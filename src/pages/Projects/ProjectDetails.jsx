@@ -389,38 +389,63 @@ const ProjectDetails = () => {
   const openPunchComment = async (punchId) => {
     try {
       setSelectedPunchItemId(punchId);
-      const res = await axios.get(`${url}/punchlist/${punchId}/comments`);
-      setPunchComments(res.data);
+      const { data } = await axios.get(`${url}/punchlist/${punchId}/comments`);
+      const normalized = (data || []).map((c) => {
+        const isUser = c.createdByType === "user";
+        const name =
+          c.name ||
+          c.createdByName ||
+          (isUser
+            ? [c.user?.firstName, c.user?.lastName].filter(Boolean).join(" ")
+            : c.customer?.full_name) ||
+          "Customer";
 
-      const grouped = res.data.reduce((acc, comment) => {
+        const profileImage =
+          c.profileImage ||
+          (isUser ? c.user?.profileImage : c.customer?.profileImage) ||
+          null;
+
+        const userRole = c.userRole || (isUser ? c.user?.userRole : null);
+
+        return { ...c, name, profileImage, userRole };
+      });
+
+      setPunchComments(normalized);
+
+      const grouped = normalized.reduce((acc, comment) => {
         const date = new Date(comment.createdAt).toLocaleDateString();
         if (!acc[date]) acc[date] = [];
         acc[date].push(comment);
         return acc;
       }, {});
-
       setGroupedPunchComments(grouped);
+
       setIsPunchCanvasOpen(true);
     } catch (err) {
       console.error("Error fetching punch list comments:", err);
     }
   };
+
   const handleAddPunchComment = async () => {
     if (!punchCommentText.trim()) return;
 
-    const user = JSON.parse(localStorage.getItem("user"))?.user;
-    const customer = JSON.parse(localStorage.getItem("customer"));
+    const user = JSON.parse(localStorage.getItem("user"))?.user || null;
+    const customer = JSON.parse(localStorage.getItem("customer")) || null;
+
     const creator = user || customer;
     const creatorType = user ? "user" : "customer";
 
     const tempComment = {
       id: `temp-${Date.now()}`,
-      comment: punchCommentText,
+      comment: punchCommentText.trim(),
       createdAt: new Date().toISOString(),
       createdByType: creatorType,
-      name: creator.firstName || creator.full_name,
+      name: user
+        ? [creator.firstName, creator.lastName].filter(Boolean).join(" ")
+        : creator?.full_name || "Customer",
       userRole: user ? creator.userRole : null,
-      profileImage: creator.profileImage || null,
+      profileImage: creator?.profileImage || null,
+      _optimistic: true,
     };
 
     const today = new Date().toLocaleDateString();
@@ -441,7 +466,6 @@ const ProjectDetails = () => {
           clientId: creatorType === "customer" ? creator.id : null,
         }
       );
-
       await openPunchComment(selectedPunchItemId);
     } catch (err) {
       console.error("Failed to add punch comment:", err);
@@ -449,6 +473,7 @@ const ProjectDetails = () => {
       setCommentLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchDocuments();
@@ -2990,9 +3015,10 @@ const ProjectDetails = () => {
                             />
                             <div>
                               <p className="whatsapp-comment-author">
-                                {comment.createdByType === "user"
-                                  ? `${comment.name} (${comment.userRole})`
-                                  : `Customer`}
+                                {comment.createdByType === 'customer'
+                                  ? `Customer${comment?.name ? ' · ' + comment.name : ''}`
+                                  : `${comment.name || ''}${comment.userRole ? ` (${comment.userRole})` : ''}`
+                                }
                               </p>
                             </div>
                           </div>
